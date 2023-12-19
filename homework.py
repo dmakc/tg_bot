@@ -1,5 +1,4 @@
 import datetime
-import locale
 import logging
 import os
 import time
@@ -8,8 +7,6 @@ from http import HTTPStatus
 import requests
 import telegram
 from dotenv import load_dotenv
-
-locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
 load_dotenv()
 
