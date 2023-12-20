@@ -1,9 +1,11 @@
 import datetime
 import logging
+import sys
 import os
 import time
 from http import HTTPStatus
 
+import exceptions
 import requests
 import telegram
 from dotenv import load_dotenv
@@ -23,84 +25,61 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    filename='bot.log',
-    filemode='w',
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
-logger = logging.getLogger(__name__)
-logger.addHandler(
-    logging.StreamHandler()
-)
-
-
-class HTTPStatusError(Exception):
-    """Сервер вернул ошибку."""
-
-
-class UndocumentedStatusError(Exception):
-    """Недокументированный статус."""
-
-
-class EmptyDictOrListError(Exception):
-    """Пустой словарь или список."""
-
-
-class EmptyResponseFromAPI(Exception):
-    """Пустой ответ от API."""
-
 
 def check_tokens():
     """Проверяем наличие токена."""
-    tokens = True
-    if PRACTICUM_TOKEN is None:
-        tokens = False
-        logger.critical('Отсутствует откружение: PRACTICUM_TOKEN')
-    if TELEGRAM_TOKEN is None:
-        tokens = False
-        logger.critical('Отсутствует откружение: TELEGRAM_TOKEN')
-    if TELEGRAM_CHAT_ID is None:
-        tokens = False
-        logger.critical('Отсутствует откружение: CHAT_ID')
-    return tokens
+    return all([TELEGRAM_TOKEN, PRACTICUM_TOKEN, TELEGRAM_CHAT_ID])
 
 
 def send_message(bot, message):
     """Отправляем сообщение в бот."""
     try:
+        logging.info('Начало отправки сообщения в telegram')
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        logger.debug(f'Сообщение в telegram было отправлено: {message}')
+        logging.debug(f'Сообщение в telegram было отправлено: {message}')
     except telegram.TelegramError as error:
-        logger.error(f'Сообщение в telegram не отправлено: {error}')
+        logging.error(f'Сообщение в telegram не отправлено: {error}')
 
 
 def get_api_answer(timestamp):
     """Делаем запрос к API."""
-    params = {'from_date': timestamp}
+    params_request = {
+        'url': ENDPOINT,
+        'headers': HEADERS,
+        'params': {'from_date': timestamp},
+    }
     try:
-        response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+        logging.info(
+            'Начало запроса: url = {url},'
+            'headers = {headers},'
+            'params = {params}'.format(**params_request))
+        response = requests.get(**params_request)
         if response.status_code != HTTPStatus.OK:
-            logger.error(f'API недоступен: {response.status_code}')
-            raise HTTPStatusError(f'API недоступен: {response.status_code}')
+            raise exceptions.InvalidResponseCode(
+                'Не удалось получить ответ API, '
+                f'ошибка: {response.status_code}'
+                f'причина: {response.reason}'
+                f'текст: {response.text}')
         return response.json()
-    except Exception as error:
-        logger.error(f'Код ответа API: {error}')
-        raise Exception(f'Код ответа API: {error}')
+    except requests.exceptions.RequestException as error:
+        logging.error(f'Ошибка запроса: {error}')
+        raise exceptions.RequestFailed()
 
 
 def check_response(response):
     """Проверяем ответ."""
-    logger.debug('Начало проверки ответа API')
+    logging.debug('Начало проверки ответа API')
     if not isinstance(response, dict):
         raise TypeError('Ошибка в типе ответа API')
     if 'homeworks' not in response or 'current_date' not in response:
-        raise EmptyResponseFromAPI('Пустой ответ от API')
-    if not isinstance(response['homeworks'], list):
+        raise exceptions.EmptyResponseFromAPI('Пустой ответ от API')
+    homeworks = response.get('homeworks')
+    if not isinstance(homeworks, list):
         raise TypeError('homeworks не является списком')
-    if not isinstance(response['current_date'], int):
-        raise TypeError('current_date не является списком')
-    return response['homeworks']
+    homeworks = response.get('current_date')
+    if not isinstance(homeworks, int):
+        raise TypeError('current_date не является целым числом')
+    return homeworks
 
 
 def parse_status(homework):
@@ -110,7 +89,7 @@ def parse_status(homework):
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
     if homework_status not in HOMEWORK_VERDICTS:
-        raise UndocumentedStatusError(
+        raise exceptions.UndocumentedStatusError(
             f'Неизвестный статус работы - {homework_status}'
         )
     return (
@@ -124,8 +103,8 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logger.critical('Отсутствуют переменные окружения')
-        exit()
+        logging.critical('Отсутствуют переменные окружения')
+        sys.exit('Отсутствуют переменные окружения')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
     now = datetime.datetime.now()
@@ -141,13 +120,23 @@ def main():
                     message = parse_status(homework)
                     send_message(bot, message)
         except Exception as error:
-            logger.error(f'Сбой в работе бота: {error}')
+            logging.error(f'Сбой в работе бота: {error}')
             message = f'Сбой в работе бота: {error}'
             send_message(bot, message)
         finally:
-            logger.info('Ждем 10 минут и проверяем статус')
+            logging.info('Ждем 10 минут и проверяем статус')
             time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename='bot.log',
+        filemode='w',
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    )
+    logger = logging.getLogger(__name__)
+    logger.addHandler(
+        logging.StreamHandler(stream=sys.stdout,)
+    )
     main()
