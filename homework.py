@@ -1,14 +1,15 @@
 import datetime
 import logging
-import sys
 import os
+import sys
 import time
 from http import HTTPStatus
 
-import exceptions
 import requests
 import telegram
 from dotenv import load_dotenv
+
+import exceptions
 
 load_dotenv()
 
@@ -62,8 +63,7 @@ def get_api_answer(timestamp):
                 f'текст: {response.text}')
         return response.json()
     except requests.exceptions.RequestException as error:
-        logging.error(f'Ошибка запроса: {error}')
-        raise exceptions.RequestFailed()
+        raise exceptions.RequestFailed(f'Ошибка запроса: {error}')
 
 
 def check_response(response):
