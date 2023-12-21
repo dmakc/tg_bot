@@ -76,9 +76,6 @@ def check_response(response):
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise TypeError('homeworks не является списком')
-    homeworks = response.get('current_date')
-    if not isinstance(homeworks, int):
-        raise TypeError('current_date не является целым числом')
     return homeworks
 
 
@@ -106,23 +103,38 @@ def main():
         logging.critical('Отсутствуют переменные окружения')
         sys.exit('Отсутствуют переменные окружения')
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
+    timestamp = 0
     now = datetime.datetime.now()
     send_message(
         bot,
         f'Начало работы telegram бота: {now.strftime("%d-%m-%Y %H:%M")}'
     )
+    old_status = ''
     while True:
         try:
             response = get_api_answer(timestamp)
-            if check_response(response):
-                for homework in response['homeworks']:
-                    message = parse_status(homework)
-                    send_message(bot, message)
-        except Exception as error:
-            logging.error(f'Сбой в работе бота: {error}')
+            timestamp = response.get(
+                'current_data', timestamp
+            )
+            homeworks_list = check_response(response)
+            if homeworks_list:
+                new_status = parse_status(homeworks_list[0])
+            else:
+                new_status = 'Нет новых статусов'
+            if new_status != old_status:
+                send_message(bot, new_status)
+                old_status = new_status
+            else:
+                logging.info(new_status)
+        except exceptions.EmptyResponseFromAPI as error:
             message = f'Сбой в работе бота: {error}'
-            send_message(bot, message)
+            logging.error(message, exc_info=True)
+        except Exception as error:
+            message = f'Сбой в работе бота: {error}'
+            logging.error(message, exc_info=True)
+            if message != old_status:
+                send_message(bot, message)
+                old_status = message
         finally:
             logging.info('Ждем 10 минут и проверяем статус')
             time.sleep(RETRY_PERIOD)
