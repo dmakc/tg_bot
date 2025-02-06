@@ -17,7 +17,7 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 RETRY_PERIOD = 600
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
+ENDPOINT = os.getenv('PRACTICUM_ENDPOINT')
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 HOMEWORK_VERDICTS = {
@@ -58,9 +58,10 @@ def get_api_answer(timestamp):
         if response.status_code != HTTPStatus.OK:
             raise exceptions.InvalidResponseCode(
                 'Не удалось получить ответ API, '
-                f'ошибка: {response.status_code}'
-                f'причина: {response.reason}'
-                f'текст: {response.text}')
+                f'ошибка: {response.status_code}, '
+                f'причина: {response.reason}, '
+                f'текст: {response.text}.'
+            )
         return response.json()
     except requests.exceptions.RequestException as error:
         raise exceptions.RequestFailed(f'Ошибка запроса: {error}')
@@ -144,6 +145,7 @@ if __name__ == '__main__':
     logging.basicConfig(
         level=logging.DEBUG,
         filename='bot.log',
+        encoding='utf-8',
         filemode='w',
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     )
